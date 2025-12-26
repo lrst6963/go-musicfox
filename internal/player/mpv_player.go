@@ -31,6 +31,7 @@ type mpvPlayer struct {
 	tickerDone    chan bool     // ticker 停止信号
 	playStartTime time.Time     // 播放开始时间
 	eventDone     chan bool     // event listener 停止信号
+	isSwitching   bool          // 是否正在切换歌曲（用于忽略切换时的 END_FILE 事件）
 }
 
 // NewMpvPlayer 创建新的MPV播放器实例
@@ -111,8 +112,36 @@ func (p *mpvPlayer) listenMpvEvent() {
 			}
 
 			switch event.EventId {
+			case mpv.EVENT_START_FILE:
+				// 开始加载文件，设置为播放状态
+
+				// 确保未暂停
+				_ = p.handle.SetProperty("pause", mpv.FORMAT_FLAG, false)
+
+				p.mutex.Lock()
+				p.isSwitching = false // 切换完成
+				p.state = types.Playing
+				p.cachedTimePos = 0
+				p.lastSyncTime = time.Now()
+				p.stopTicker()  // 确保停止旧的 ticker
+				p.startTicker() // 启动新的 ticker
+				p.mutex.Unlock()
+				p.setState(types.Playing)
 			case mpv.EVENT_END_FILE:
-				// 歌曲播放结束
+				p.mutex.Lock()
+				isSwitching := p.isSwitching
+				p.mutex.Unlock()
+
+				if isSwitching {
+					// 如果正在切换歌曲，忽略 END_FILE 事件（这是上一首歌的结束）
+					// 但需要停止上一次的 ticker
+					p.mutex.Lock()
+					p.stopTicker()
+					p.mutex.Unlock()
+					continue
+				}
+
+				// 真正的播放结束
 				p.setState(types.Stopped)
 				p.mutex.Lock()
 				p.stopTicker()
@@ -127,15 +156,11 @@ func (p *mpvPlayer) listenMpvEvent() {
 
 // Play 播放指定音乐
 func (p *mpvPlayer) Play(music URLMusic) {
-	// 重置播放状态（保护 curMusic、ticker 和 state）
+	// 更新当前音乐并标记切换状态
 	p.mutex.Lock()
 	p.curMusic = music
-	p.stopTicker()
-	p.lastSyncTime = time.Now()
+	p.isSwitching = true // 标记开始切换
 	p.playStartTime = time.Now()
-	p.cachedTimePos = 0
-	p.startTicker()
-	p.state = types.Playing
 	p.mutex.Unlock()
 
 	// 加载并播放音乐
@@ -148,28 +173,26 @@ func (p *mpvPlayer) Play(music URLMusic) {
 		slog.Error("MPV播放失败", slogx.Error(err))
 		// 如果加载失败，需要恢复状态
 		p.mutex.Lock()
+		p.isSwitching = false
 		p.state = types.Stopped
-		p.stopTicker()
 		p.mutex.Unlock()
 		return
 	}
 
-	// 通知状态变化
-	select {
-	case p.stateChan <- types.Playing:
-	case <-time.After(time.Second * 2):
-	}
+	// 不在这里通知状态变化，让 START_FILE 事件来通知
 }
 
 // startTicker 启动定期同步 ticker
 func (p *mpvPlayer) startTicker() {
 	p.ticker = time.NewTicker(200 * time.Millisecond)
 	p.tickerDone = make(chan bool)
+	doneChan := p.tickerDone // Capture locally to avoid race
+	ticker := p.ticker       // Capture locally
 
 	go func() {
 		for {
 			select {
-			case <-p.ticker.C:
+			case <-ticker.C:
 				// 每秒从 mpv 同步一次实际播放位置
 				if time.Since(p.lastSyncTime) >= time.Second {
 					if timePos, err := p.getMpvTimePos(); err == nil {
@@ -184,7 +207,7 @@ func (p *mpvPlayer) startTicker() {
 				case p.timeChan <- p.PassedTime():
 				default:
 				}
-			case <-p.tickerDone:
+			case <-doneChan:
 				return
 			}
 		}

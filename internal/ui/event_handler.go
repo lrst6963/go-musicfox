@@ -513,6 +513,12 @@ func (h *EventHandler) MouseMsgHandle(msg tea.MouseMsg, a *model.App) (stopPropa
 			action(h.netease, true)
 			return true, main, a.Tick(time.Nanosecond)
 		}
+	case tea.MouseButtonMiddle:
+		// 鼠标中键：返回上一级（等同于ESC键）
+		if msg.Action == tea.MouseActionPress {
+			main.BackMenu()
+			return true, main, a.Tick(time.Nanosecond)
+		}
 	}
 
 	return true, main, a.Tick(time.Nanosecond)

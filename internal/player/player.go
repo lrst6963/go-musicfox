@@ -1,9 +1,7 @@
 package player
 
 import (
-	"fmt"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/go-musicfox/go-musicfox/internal/configs"
@@ -57,14 +55,7 @@ func NewPlayerFromConfig() Player {
 	case types.WinMediaPlayer:
 		player = NewWinMediaPlayer()
 	case types.MpvPlayer:
-		cmd := exec.Command(cfg.Player.Mpv.Bin, "--version")
-		output, err := cmd.CombinedOutput()
-		if err != nil || !strings.Contains(string(output), "mpv") {
-			panic(fmt.Sprintf("MPV不可用: %v, 输出: %s", err, string(output)))
-		}
-		player = NewMpvPlayer(&MpvConfig{
-			BinPath: cfg.Player.Mpv.Bin, // 使用配置文件中的mpv路径
-		})
+		player = NewMpvPlayer()
 	default:
 		panic("unknown player engine")
 	}

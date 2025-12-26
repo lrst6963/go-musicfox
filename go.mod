@@ -6,6 +6,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/anhoder/foxful-cli v0.5.0
 	github.com/atotto/clipboard v0.1.4
+	github.com/aynakeya/go-mpv v0.0.0-00010101000000-000000000000
 	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/buger/jsonparser v1.1.1
 	github.com/charmbracelet/bubbles v0.16.1
@@ -96,6 +97,7 @@ require (
 )
 
 replace (
+	github.com/aynakeya/go-mpv => ../go-mpv
 	github.com/charmbracelet/bubbletea v0.25.0 => github.com/go-musicfox/bubbletea v0.25.0-foxful
 	github.com/cnsilvan/UnblockNeteaseMusic => github.com/go-musicfox/UnblockNeteaseMusic v0.1.6
 	// github.com/cnsilvan/UnblockNeteaseMusic => ../UnblockNeteaseMusic

@@ -27,8 +27,9 @@ import (
 const LoginPageType model.PageType = "login"
 
 const (
-	submitIndex  = 2 // skip account and password input
-	qrLoginIndex = 3
+	submitIndex       = 2 // skip account and password input
+	captchaLoginIndex = 3
+	qrLoginIndex      = 4
 
 	tabAccount = 0
 	tabCookie  = 1
@@ -63,32 +64,35 @@ func tickLogin(duration time.Duration) tea.Cmd {
 type LoginPage struct {
 	netease *Netease
 
-	menuTitle     *model.MenuItem
-	index         int
-	tabIndex      int
-	accountInput  textinput.Model
-	passwordInput textinput.Model
-	cookieInput   textinput.Model
-	submitButton  string
-	qrLoginButton string
-	qrLoginStep   int
-	tips          string
-	AfterLogin    LoginCallback
+	menuTitle          *model.MenuItem
+	index              int
+	tabIndex           int
+	accountInput       textinput.Model
+	passwordInput      textinput.Model
+	cookieInput        textinput.Model
+	submitButton       string
+	qrLoginButton      string
+	captchaLoginButton string
+	qrLoginStep        int
+	tips               string
+	AfterLogin         LoginCallback
 
 	// 以下字段用于鼠标点击区域的计算与命中
-	accountRowY  int // 账号输入框所在的行号（1-based）
-	passwordRowY int // 密码输入框所在的行号（1-based）
-	cookieRowY   int // Cookie输入框所在的行号（1-based）
-	buttonsRowY  int // 提交/扫码按钮所在行号（1-based）
-	submitStartX int // 提交按钮起始 X（0-based）
-	submitEndX   int // 提交按钮结束 X（0-based，闭区间）
-	qrStartX     int // 扫码按钮起始 X（0-based）
-	qrEndX       int // 扫码按钮结束 X（0-based，闭区间）
-	cookieStartX int // Cookie按钮起始 X（0-based）
-	cookieEndX   int // Cookie按钮结束 X（0-based，闭区间）
-	tabStartX    int // Tab 区域起始 X（0-based）
-	tabEndX      int // Tab 区域结束 X（0-based，闭区间）
-	tabsRowY     int // Tab 所在行号（1-based）
+	accountRowY   int // 账号输入框所在的行号（1-based）
+	passwordRowY  int // 密码输入框所在的行号（1-based）
+	cookieRowY    int // Cookie输入框所在的行号（1-based）
+	buttonsRowY   int // 提交/扫码按钮所在行号（1-based）
+	submitStartX  int // 提交按钮起始 X（0-based）
+	submitEndX    int // 提交按钮结束 X（0-based，闭区间）
+	qrStartX      int // 扫码按钮起始 X（0-based）
+	qrEndX        int // 扫码按钮结束 X（0-based，闭区间）
+	captchaStartX int
+	captchaEndX   int
+	cookieStartX  int // Cookie按钮起始 X（0-based）
+	cookieEndX    int // Cookie按钮结束 X（0-based，闭区间）
+	tabStartX     int // Tab 区域起始 X（0-based）
+	tabEndX       int // Tab 区域结束 X（0-based，闭区间）
+	tabsRowY      int // Tab 所在行号（1-based）
 }
 
 func NewLoginPage(netease *Netease) (login *LoginPage) {
@@ -120,6 +124,7 @@ func NewLoginPage(netease *Netease) (login *LoginPage) {
 		submitButton:  model.GetBlurredSubmitButton(),
 	}
 	login.qrLoginButton = model.GetBlurredButton(login.qrButtonTextByStep())
+	login.captchaLoginButton = model.GetBlurredButton("验证码登录")
 
 	return
 }
@@ -189,6 +194,11 @@ func (l *LoginPage) Update(msg tea.Msg, _ *model.App) (model.Page, tea.Cmd) {
 						l.index = submitIndex
 						return l.enterHandler()
 					}
+					// 验证码登录按钮
+					if x >= l.captchaStartX && x <= l.captchaEndX {
+						l.index = captchaLoginIndex
+						return l.enterHandler()
+					}
 					if x >= l.qrStartX && x <= l.qrEndX {
 						l.index = qrLoginIndex
 						return l.enterHandler()
@@ -230,7 +240,7 @@ func (l *LoginPage) Update(msg tea.Msg, _ *model.App) (model.Page, tea.Cmd) {
 
 	switch key.String() {
 	case "b":
-		if l.index != submitIndex && l.index != qrLoginIndex {
+		if l.index != submitIndex && l.index != qrLoginIndex && l.index != captchaLoginIndex {
 			if l.tabIndex == tabAccount {
 				return l.updateLoginInputs(msg)
 			}
@@ -240,10 +250,16 @@ func (l *LoginPage) Update(msg tea.Msg, _ *model.App) (model.Page, tea.Cmd) {
 	case "esc":
 		l.tips = ""
 		l.qrLoginStep = 0
+		// 更新按钮高亮状态
 		if l.index == qrLoginIndex {
 			l.qrLoginButton = model.GetFocusedButton(l.qrButtonTextByStep())
 		} else {
 			l.qrLoginButton = model.GetBlurredButton(l.qrButtonTextByStep())
+		}
+		if l.index == captchaLoginIndex {
+			l.captchaLoginButton = model.GetFocusedButton("验证码登录")
+		} else {
+			l.captchaLoginButton = model.GetBlurredButton("验证码登录")
 		}
 		return l.netease.MustMain(), l.netease.RerenderCmd(true)
 	case "tab", "shift+tab", "enter", "up", "down", "left", "right", "]", "[":
@@ -331,6 +347,12 @@ func (l *LoginPage) Update(msg tea.Msg, _ *model.App) (model.Page, tea.Cmd) {
 				l.submitButton = model.GetFocusedSubmitButton()
 			} else {
 				l.submitButton = model.GetBlurredSubmitButton()
+			}
+
+			if l.index == captchaLoginIndex {
+				l.captchaLoginButton = model.GetFocusedButton("验证码登录")
+			} else {
+				l.captchaLoginButton = model.GetBlurredButton("验证码登录")
 			}
 
 			if l.index == qrLoginIndex {
@@ -508,8 +530,21 @@ func (l *LoginPage) renderAccountLoginView(a *model.App, builder *strings.Builde
 
 	btnBlank := "    "
 	write(btnBlank)
+
+	// 验证码登录按钮坐标
+	captchaX := submitX + submitW + lipgloss.Width(btnBlank)
+	captchaW := lipgloss.Width(l.captchaLoginButton)
+	l.captchaStartX = captchaX
+	l.captchaEndX = captchaX + captchaW - 1
+
+	write(l.captchaLoginButton)
+
+	// 在验证码按钮和扫码按钮间添加少量间距
+	midBlank := "  "
+	write(midBlank)
+
 	// 扫码按钮坐标
-	qrX := submitX + submitW + lipgloss.Width(btnBlank)
+	qrX := captchaX + captchaW + lipgloss.Width(midBlank)
 	qrW := lipgloss.Width(l.qrLoginButton)
 	l.qrStartX = qrX
 	l.qrEndX = qrX + qrW - 1
@@ -627,6 +662,10 @@ func (l *LoginPage) enterHandler() (model.Page, tea.Cmd) {
 	case qrLoginIndex:
 		// 扫码登录
 		return l.loginByQRCode()
+	case captchaLoginIndex:
+		// 验证码登录
+		captchaPage := NewLoginCaptchaPage(l.netease, l, l.AfterLogin)
+		return captchaPage, l.netease.RerenderCmd(true)
 	}
 
 	return l, tickLogin(time.Nanosecond)
